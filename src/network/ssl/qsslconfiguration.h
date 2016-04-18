@@ -118,6 +118,9 @@ public:
     QList<QSslCertificate> caCertificates() const;
     void setCaCertificates(const QList<QSslCertificate> &certificates);
 
+    void setSslOption(QSsl::SslOption option, bool on);
+    bool testSslOption(QSsl::SslOption option) const;
+
     static QSslConfiguration defaultConfiguration();
     static void setDefaultConfiguration(const QSslConfiguration &configuration);
 

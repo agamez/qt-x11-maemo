@@ -95,6 +95,7 @@ public:
     QList<QSslCertificate> caCertificates;
 
     QSsl::SslProtocol protocol;
+    QSsl::SslOptions sslOptions;
     QSslSocket::PeerVerifyMode peerVerifyMode;
     int peerVerifyDepth;
 

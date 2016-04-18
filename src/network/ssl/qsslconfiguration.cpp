@@ -178,6 +178,7 @@ bool QSslConfiguration::operator==(const QSslConfiguration &other) const
         d->ciphers == other.d->ciphers &&
         d->caCertificates == d->caCertificates &&
         d->protocol == other.d->protocol &&
+        d->sslOptions == other.d->sslOptions &&
         d->peerVerifyMode == other.d->peerVerifyMode &&
         d->peerVerifyDepth == other.d->peerVerifyDepth;
 }
@@ -508,6 +509,33 @@ QList<QSslCertificate> QSslConfiguration::caCertificates() const
 void QSslConfiguration::setCaCertificates(const QList<QSslCertificate> &certificates)
 {
     d->caCertificates = certificates;
+}
+
+/*!
+  Enables or disables an SSL compatibility \a option. If \a on
+  is true, the \a option is enabled. If \a on is false, the
+  \a option is disabled.
+
+  \sa testSslOption()
+*/
+void QSslConfiguration::setSslOption(QSsl::SslOption option, bool on)
+{
+    if (on)
+        d->sslOptions |= option;
+    else
+        d->sslOptions &= ~option;
+}
+
+/*!
+  \since 4.8
+
+  Returns \c true if the specified SSL compatibility \a option is enabled.
+
+  \sa setSslOption()
+*/
+bool QSslConfiguration::testSslOption(QSsl::SslOption option) const
+{
+    return d->sslOptions & option;
 }
 
 /*!

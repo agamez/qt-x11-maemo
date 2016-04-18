@@ -200,6 +200,10 @@ QSslCipher QSslSocketBackendPrivate::QSslCipher_from_SSL_CIPHER(SSL_CIPHER *ciph
             ciph.d->protocol = QSsl::SslV2;
         else if (protoString == QLatin1String("TLSv1"))
             ciph.d->protocol = QSsl::TlsV1;
+        else if (protoString == QLatin1String("TLSv1.1"))
+            ciph.d->protocol = QSsl::TlsV1_1;
+        else if (protoString == QLatin1String("TLSv1.2"))
+            ciph.d->protocol = QSsl::TlsV1_2;
 
         if (descriptionList.at(2).startsWith(QLatin1String("Kx=")))
             ciph.d->keyExchangeMethod = descriptionList.at(2).mid(3);
@@ -236,6 +240,56 @@ static int q_X509Callback(int ok, X509_STORE_CTX *ctx)
     return 1;
 }
 
+long QSslSocketBackendPrivate::setupOpenSslOptions(QSsl::SslProtocol protocol, QSsl::SslOptions sslOptions)
+{
+    long options;
+    if (protocol == QSsl::TlsV1SslV3)
+        options = SSL_OP_ALL|SSL_OP_NO_SSLv2;
+    else if (protocol == QSsl::SecureProtocols)
+        options = SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3;
+    else if (protocol == QSsl::TlsV1_0OrLater)
+        options = SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3;
+#if OPENSSL_VERSION_NUMBER >= 0x10001000L
+    // Choosing Tlsv1_1OrLater or TlsV1_2OrLater on OpenSSL < 1.0.1
+    // will cause an error in QSslContext::fromConfiguration, meaning
+    // we will never get here.
+    else if (protocol == QSsl::TlsV1_1OrLater)
+        options = SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3|SSL_OP_NO_TLSv1;
+    else if (protocol == QSsl::TlsV1_2OrLater)
+        options = SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3|SSL_OP_NO_TLSv1|SSL_OP_NO_TLSv1_1;
+#endif
+    else
+        options = SSL_OP_ALL;
+
+    // This option is disabled by default, so we need to be able to clear it
+    if (sslOptions & QSsl::SslOptionDisableEmptyFragments)
+        options |= SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
+    else
+        options &= ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
+
+#ifdef SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION
+    // This option is disabled by default, so we need to be able to clear it
+    if (sslOptions & QSsl::SslOptionDisableLegacyRenegotiation)
+        options &= ~SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+    else
+        options |= SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+#endif
+
+#ifdef SSL_OP_NO_TICKET
+    if (sslOptions & QSsl::SslOptionDisableSessionTickets)
+        options |= SSL_OP_NO_TICKET;
+#endif
+#ifdef SSL_OP_NO_COMPRESSION
+    if (sslOptions & QSsl::SslOptionDisableCompression)
+        options |= SSL_OP_NO_COMPRESSION;
+#endif
+
+    if (!(sslOptions & QSsl::SslOptionDisableServerCipherPreference))
+        options |= SSL_OP_CIPHER_SERVER_PREFERENCE;
+
+    return options;
+}
+
 bool QSslSocketBackendPrivate::initSslContext()
 {
     Q_Q(QSslSocket);
@@ -252,13 +306,18 @@ init_context:
     case QSsl::SslV3:
         ctx = q_SSL_CTX_new(client ? q_SSLv3_client_method() : q_SSLv3_server_method());
         break;
-    case QSsl::AnyProtocol:
-    default:
-        ctx = q_SSL_CTX_new(client ? q_SSLv23_client_method() : q_SSLv23_server_method());
-        break;
     case QSsl::TlsV1:
         ctx = q_SSL_CTX_new(client ? q_TLSv1_client_method() : q_TLSv1_server_method());
         break;
+    case QSsl::TlsV1_1:
+        ctx = q_SSL_CTX_new(client ? q_TLSv1_1_client_method() : q_TLSv1_1_server_method());
+        break;
+    case QSsl::TlsV1_2:
+        ctx = q_SSL_CTX_new(client ? q_TLSv1_2_client_method() : q_TLSv1_2_server_method());
+        break;
+    case QSsl::AnyProtocol:
+    default:
+        ctx = q_SSL_CTX_new(client ? q_TLS_client_method() : q_TLS_server_method());
     }
     if (!ctx) {
         // After stopping Flash 10 the SSL library looses its ciphers. Try re-adding them
@@ -277,7 +336,8 @@ init_context:
     }
 
     // Enable all bug workarounds.
-    q_SSL_CTX_set_options(ctx, SSL_OP_ALL);
+    long options = QSslSocketBackendPrivate::setupOpenSslOptions(configuration.protocol, configuration.sslOptions);
+    q_SSL_CTX_set_options(ctx, options);
 
     // Initialize ciphers
     QByteArray cipherString;
